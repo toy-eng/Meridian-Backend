@@ -28,7 +28,7 @@ const Position = sequelize.define('Position', {
       fields: ['department_id', 'title'],
     },
   ],
-  // Match global config: store camelCase attributes as snake_case in MySQL
+  // Match global config: store camelCase attributes as snake_case in Postgres
   underscored: true,
 });
 

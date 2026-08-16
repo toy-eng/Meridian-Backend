@@ -15,13 +15,14 @@ const config = {
     origin: process.env.CORS_ORIGIN || '*',
   },
 
-  // Database
+  // Database (Postgres)
   db: {
+    url: process.env.DATABASE_URL || '',
     name: process.env.DB_NAME || 'staffsync',
-    user: process.env.DB_USER || 'root',
+    user: process.env.DB_USER || 'postgres',
     password: process.env.DB_PASSWORD || '',
     host: process.env.DB_HOST || 'localhost',
-    port: parseInt(process.env.DB_PORT, 10) || 3306,
+    port: parseInt(process.env.DB_PORT, 10) || 5432,
   },
 
   // JWT

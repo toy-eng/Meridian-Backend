@@ -71,8 +71,8 @@ const generateDepartmentId = async (name) => {
 
   // Find the highest sequence for the same prefix
   const [rows] = await sequelize.query(
-    `SELECT id FROM departments WHERE id LIKE :prefix ORDER BY id DESC LIMIT 1`,
-    { replacements: { prefix: `${prefix}%` } }
+    `SELECT id FROM departments WHERE id LIKE ? ORDER BY id DESC LIMIT 1`,
+    { replacements: [`${prefix}%`] }
   );
 
   let nextSeq = 1;
@@ -96,8 +96,8 @@ const generateEmployeeId = async () => {
   const prefix = `EMP-${yy}-${mm}-`;
 
   const [rows] = await sequelize.query(
-    `SELECT id FROM employees WHERE id LIKE :prefix ORDER BY id DESC LIMIT 1`,
-    { replacements: { prefix: `${prefix}%` } }
+    `SELECT id FROM employees WHERE id LIKE ? ORDER BY id DESC LIMIT 1`,
+    { replacements: [`${prefix}%`] }
   );
 
   let nextSeq = 1;

@@ -32,6 +32,11 @@ const seed = async () => {
   const forceMode = process.argv.includes('--force');
   const autoYes  = process.argv.includes('--yes');
 
+  // Ensure tables exist before checking for data. A fresh database has no
+  // tables yet, and Admin.count() would otherwise fail with "relation does not
+  // exist". (On an existing database this is a no-op.)
+  await sequelize.sync();
+
   // Check if data already exists
   const adminCount = await Admin.count();
   const hasData = adminCount > 0;
@@ -81,7 +86,7 @@ const seed = async () => {
   });
 
   // ── Company ────────────────────────────────────────────────
-  await Company.create({
+  const company = await Company.create({
     name: 'Rocks Company Ltd',
     email: 'contact@rockscompany.com',
     phoneNumber: '+1 312 908 1234',
@@ -97,6 +102,7 @@ const seed = async () => {
     abbreviation: deriveAbbreviation('Design'),
     description: 'User interface design, experience planning, and product aesthetics research.',
     head: 'Brooklyn Simmons',
+    companyId: company.id,
   });
 
   const dev = await Department.create({
@@ -105,6 +111,7 @@ const seed = async () => {
     abbreviation: deriveAbbreviation('Development'),
     description: 'Engineering, stack architecture, DevOps.',
     head: 'Cody Fisher',
+    companyId: company.id,
   });
 
   const hr = await Department.create({
@@ -113,6 +120,7 @@ const seed = async () => {
     abbreviation: deriveAbbreviation('HR'),
     description: 'Human resources, recruitment, and employee relations.',
     head: 'Not assigned',
+    companyId: company.id,
   });
 
   const marketing = await Department.create({
@@ -121,6 +129,7 @@ const seed = async () => {
     abbreviation: deriveAbbreviation('Marketing'),
     description: 'Brand strategy, campaigns, and market research.',
     head: 'Not assigned',
+    companyId: company.id,
   });
 
   // ── Positions ──────────────────────────────────────────────
@@ -182,6 +191,7 @@ const seed = async () => {
     reportingManager: 'Self',
     status: 'Active',
     photoUrl: 'https://cdn.staffsync.com/photos/emp-101.jpg',
+    companyId: company.id,
   });
 
   const emp2 = await Employee.create({
@@ -196,6 +206,7 @@ const seed = async () => {
     employmentType: 'Full-time',
     hireDate: '2024-01-12',
     status: 'Active',
+    companyId: company.id,
   });
 
   const emp3 = await Employee.create({
@@ -210,6 +221,7 @@ const seed = async () => {
     employmentType: 'Full-time',
     hireDate: '2025-07-01',
     status: 'Active',
+    companyId: company.id,
   });
 
   // ── Salary ─────────────────────────────────────────────────
