@@ -11,6 +11,10 @@ const errorHandler = require('./middleware/errorHandler');
 
 const app = express();
 
+// Disable ETag — otherwise Express tags every JSON response and replies
+// 304 Not Modified to conditional requests, which breaks API clients.
+app.disable('etag');
+
 // ─── Global Middleware ───────────────────────────────────────
 
 // HTTP request logging
@@ -31,6 +35,12 @@ app.use('/api/docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec, {
 }));
 
 // ─── Routes ──────────────────────────────────────────────────
+
+// Never cache API responses (prevents stale data + 304s on refetch)
+app.use('/api', (req, res, next) => {
+  res.set('Cache-Control', 'no-store');
+  next();
+});
 
 app.use('/api', routes);
 
