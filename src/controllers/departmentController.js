@@ -13,7 +13,7 @@ exports.list = async (req, res, next) => {
       attributes: {
         include: [
           [
-            Sequelize.literal(`(SELECT COUNT(*) FROM employees WHERE employees.department_id = Department.id)`),
+            Sequelize.literal(`(SELECT COUNT(*) FROM employees WHERE employees.department_id = "Department"."id")`),
             'employeeCount',
           ],
         ],

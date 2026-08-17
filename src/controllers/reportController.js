@@ -18,7 +18,7 @@ exports.employeeSummary = async (req, res, next) => {
       where: { companyId },
       include: [{ model: Employee, as: 'Employees', attributes: [] }],
       attributes: ['name', [fn('COUNT', col('Employees.id')), 'count']],
-      group: ['Department.id'],
+      group: ['Department.id', 'Department.name'],
       raw: true,
       nest: true,
     });
