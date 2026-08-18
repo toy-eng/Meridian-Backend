@@ -28,8 +28,8 @@ exports.register = async (req, res, next) => {
     if (!address || typeof address !== 'object' || !address.state || !address.lga || !address.settlement || !address.street) {
       throw new AppError('Address with state, lga, settlement, and street is required', 400);
     }
-    if (!password || password.length < 6) {
-      throw new AppError('Password must be at least 6 characters', 400);
+    if (!password || password.length < 8) {
+      throw new AppError('Password must be at least 8 characters', 400);
     }
     if (!agreeTerms) {
       throw new AppError('You must agree to the terms', 400);
@@ -99,8 +99,8 @@ exports.login = async (req, res, next) => {
     const { email, password, rememberMe } = req.body;
 
     if (!email) throw new AppError('Email is required', 400);
-    if (!password || password.length < 6) {
-      throw new AppError('Password must be at least 6 characters', 400);
+    if (!password || password.length < 8) {
+      throw new AppError('Password must be at least 8 characters', 400);
     }
 
     // Find company by email
@@ -206,8 +206,8 @@ exports.resetPassword = async (req, res, next) => {
 
     if (!email) throw new AppError('Email is required', 400);
     if (!otp) throw new AppError('OTP is required', 400);
-    if (!newPassword || newPassword.length < 6) {
-      throw new AppError('New password must be at least 6 characters', 400);
+    if (!newPassword || newPassword.length < 8) {
+      throw new AppError('New password must be at least 8 characters', 400);
     }
 
     // Verify OTP
@@ -254,8 +254,8 @@ exports.changePassword = async (req, res, next) => {
     const { currentPassword, newPassword } = req.body;
 
     if (!currentPassword) throw new AppError('Current password is required', 400);
-    if (!newPassword || newPassword.length < 6) {
-      throw new AppError('New password must be at least 6 characters', 400);
+    if (!newPassword || newPassword.length < 8) {
+      throw new AppError('New password must be at least 8 characters', 400);
     }
 
     const admin = await Admin.findByPk(req.user.id);
