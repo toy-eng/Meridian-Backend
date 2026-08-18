@@ -75,17 +75,14 @@ exports.getStats = async (req, res, next) => {
     // ── Department Overview ────────────────────────────────
     const departments = await Department.findAll({
       where: { companyId },
-      attributes: ['id', 'name', 'abbreviation', 'head'],
       include: [{ model: Employee, as: 'Employees', attributes: [] }],
-      attributes: {
-        include: [
-          'id',
-          'name',
-          'abbreviation',
-          'head',
-          [fn('COUNT', col('Employees.id')), 'employeeCount'],
-        ],
-      },
+      attributes: [
+        'id',
+        'name',
+        'abbreviation',
+        'head',
+        [fn('COUNT', col('Employees.id')), 'employeeCount'],
+      ],
       group: ['Department.id', 'Department.name', 'Department.abbreviation', 'Department.head'],
       order: [['name', 'ASC']],
       raw: true,

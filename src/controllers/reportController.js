@@ -1,6 +1,6 @@
 const PDFDocument = require('pdfkit');
 const { Op, fn, col } = require('sequelize');
-const { Employee, Department, Salary } = require('../models');
+const { Employee, Department, Position, Salary } = require('../models');
 
 /**
  * GET /reports/employee-summary
@@ -192,7 +192,10 @@ exports.exportReport = async (req, res, next) => {
     // ── Gather all data ────────────────────────────────────
     const employees = await Employee.findAll({
       where: { companyId },
-      include: [{ model: Department, as: 'Department', attributes: ['name'] }],
+      include: [
+        { model: Department, as: 'Department', attributes: ['name'] },
+        { model: Position, as: 'Position', attributes: ['title'] },
+      ],
       order: [['createdAt', 'DESC']],
     });
 
@@ -228,7 +231,7 @@ exports.exportReport = async (req, res, next) => {
       csv += '=== EMPLOYEE SUMMARY ===\n';
       csv += 'ID,First Name,Last Name,Email,Department,Position,Status,Hire Date\n';
       employees.forEach((e) => {
-        csv += `${e.id},${e.firstName},${e.lastName},${e.email},${e.Department?.name || ''},${e.position},${e.status},${e.hireDate}\n`;
+        csv += `${e.id},${e.firstName},${e.lastName},${e.email},${e.Department?.name || ''},${e.Position?.title || ''},${e.status},${e.hireDate}\n`;
       });
 
       csv += '\n\n';

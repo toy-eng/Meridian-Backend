@@ -67,7 +67,7 @@ exports.list = async (req, res, next) => {
     const page = Math.max(parseInt(req.query.page, 10) || 1, 1);
     const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 10, 1), 100);
     const offset = (page - 1) * limit;
-    const { search, department, status, sortBy, sortOrder } = req.query;
+    const { search, department, departmentId, status, sortBy, sortOrder } = req.query;
 
     // Build where clause
     const where = { companyId: req.user.companyId };
@@ -91,8 +91,18 @@ exports.list = async (req, res, next) => {
     }
     if (status) where.status = status;
 
-    // Handle department filter (by name)
-    if (department) {
+    // Handle department filter — linked by id (departmentId is authoritative;
+    // the `department` name is a legacy fallback for older clients).
+    if (departmentId) {
+      const dept = await Department.findOne({ where: { id: departmentId, companyId: req.user.companyId } });
+      if (!dept) {
+        return res.json({
+          success: true,
+          data: { employees: [], pagination: { page, limit, totalItems: 0, totalPages: 0 } },
+        });
+      }
+      where.departmentId = dept.id;
+    } else if (department) {
       const dept = await Department.findOne({ where: { name: department, companyId: req.user.companyId } });
       if (dept) where.departmentId = dept.id;
       else {
@@ -315,51 +325,51 @@ exports.update = async (req, res, next) => {
       updates.reportingManagerId = mgr ? mgr.id : null;
     }
 
-    // Handle department update — linked by id only; if department changes, reset position
+    // Resolve the target department (linked by id only). Defaults to the
+    // employee's current department when only a position is being changed.
+    let newDepartmentId = employee.departmentId;
+    let departmentChanged = false;
+
     if (req.body.departmentId !== undefined) {
       if (req.body.department && !req.body.departmentId) {
         throw new AppError('departmentId is required to assign a department', 400);
       }
       const dept = await resolveDepartment(req.user.companyId, req.body.departmentId);
+      newDepartmentId = dept ? dept.id : null;
+      departmentChanged = newDepartmentId !== employee.departmentId;
+      updates.departmentId = newDepartmentId;
+    }
 
-      if (dept) {
-        const departmentChanged = dept.id !== employee.departmentId;
-        updates.departmentId = dept.id;
-
-        if (departmentChanged) {
-          // Position must be re-specified when department changes
-          if (req.body.positionId === undefined) {
-            throw new AppError(
-              'Department changed — position must be re-specified for the new department',
-              400
-            );
-          }
-          // Validate new position belongs to the new department
-          const newPos = await resolvePosition(dept.id, req.body.positionId);
-          if (!newPos) {
-            throw new AppError('Selected position does not exist in the new department', 400);
-          }
-          updates.position = newPos.id;
-        }
-      } else {
-        // department explicitly set to empty/null — clear it
-        updates.departmentId = null;
-        updates.position = null;
+    // Resolve the target position (linked by id only). When the department
+    // changes, the position must be re-specified and belong to the new one.
+    if (req.body.positionId !== undefined) {
+      if (req.body.position && !req.body.positionId) {
+        throw new AppError('positionId is required to assign a position', 400);
       }
-    } else if (req.body.positionId !== undefined) {
-      const currentDeptId = employee.departmentId;
-      if (req.body.positionId) {
-        if (!currentDeptId) {
+
+      if (!req.body.positionId) {
+        // position explicitly set to empty/null — clear it
+        updates.position = null;
+      } else {
+        if (!newDepartmentId) {
           throw new AppError('Cannot set position — employee has no department assigned', 400);
         }
-        const pos = await resolvePosition(currentDeptId, req.body.positionId);
+        const pos = await resolvePosition(newDepartmentId, req.body.positionId);
         if (!pos) {
           throw new AppError('Selected position does not exist in this department', 400);
         }
         updates.position = pos.id;
-      } else {
-        // position explicitly set to empty/null — clear it
+      }
+    } else if (departmentChanged) {
+      // Department changed without a new position — the old position no longer
+      // belongs to the new department, so require an explicit re-specification.
+      if (!newDepartmentId) {
         updates.position = null;
+      } else {
+        throw new AppError(
+          'Department changed — position must be re-specified for the new department',
+          400
+        );
       }
     }
 
