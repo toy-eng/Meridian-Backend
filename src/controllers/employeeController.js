@@ -19,8 +19,46 @@ const fullInclude = [
 const basicAttributes = [
   'id', 'firstName', 'lastName', 'email', 'phoneNumber',
   'departmentId', 'position', 'employmentType', 'status',
-  'hireDate', 'photoUrl',
+  'hireDate', 'photoUrl', 'reportingManagerId',
 ];
+
+// ─── Resolve helpers (id-only linking; name/title is display-only) ──
+
+/**
+ * Resolve a department by id. Relationships are linked by id only — the
+ * department name is display data and is never used to find the record.
+ * @returns {Promise<import('../models/Department')|null>}
+ */
+async function resolveDepartment(companyId, departmentId) {
+  if (!departmentId) return null;
+  const dept = await Department.findOne({ where: { id: departmentId, companyId } });
+  if (!dept) throw new AppError('Department not found', 400);
+  return dept;
+}
+
+/**
+ * Resolve a position by id, scoped to a department.
+ * @returns {Promise<import('../models/Position')|null>}
+ */
+async function resolvePosition(departmentId, positionId) {
+  if (!positionId) return null;
+  const pos = await Position.findOne({ where: { id: positionId } });
+  if (!pos || (departmentId && pos.departmentId !== departmentId)) {
+    throw new AppError('Selected position does not exist in this department', 400);
+  }
+  return pos;
+}
+
+/**
+ * Resolve a reporting manager by id.
+ * @returns {Promise<import('../models/Employee')|null>}
+ */
+async function resolveReportingManager(companyId, reportingManagerId) {
+  if (!reportingManagerId) return null;
+  const mgr = await Employee.findOne({ where: { id: reportingManagerId, companyId } });
+  if (!mgr) throw new AppError('Reporting manager not found', 400);
+  return mgr;
+}
 
 // ─── 2.1 List Employees ─────────────────────────────────────
 
@@ -90,11 +128,13 @@ exports.list = async (req, res, next) => {
 
     const employees = rows.map((emp) => {
       const e = emp.toJSON();
+      const positionId = e.position; // raw position id (Employee.position stores the id)
       e.department = e.Department?.name || null;
-      e.position = e.Position?.title || e.position || null;
+      e.position = e.Position?.title || null;
+      e.positionId = positionId || e.Position?.id || null;
       delete e.Department;
       delete e.Position;
-      delete e.departmentId;
+      // departmentId and reportingManagerId are kept as-is on the row.
       return e;
     });
 
@@ -129,18 +169,18 @@ exports.getById = async (req, res, next) => {
     }
 
     const result = employee.toJSON();
-    // Flatten department name
+    // Flatten department name (keep departmentId)
     if (result.Department) {
       result.department = result.Department.name;
+      result.departmentId = result.Department.id;
       delete result.Department;
     }
-    // Flatten position title
+    // Flatten position title (keep positionId)
     if (result.Position) {
       result.position = result.Position.title;
       result.positionId = result.Position.id;
       delete result.Position;
     }
-    delete result.departmentId;
 
     res.json({
       success: true,
@@ -157,7 +197,10 @@ exports.create = async (req, res, next) => {
   try {
     const {
       firstName, lastName, email, phoneNumber, gender,
-      department: deptName, position, employmentType, hireDate, status,
+      department: deptName, departmentId,
+      position, positionId,
+      reportingManager, reportingManagerId,
+      employmentType, hireDate, status,
     } = req.body;
 
     // Validate required fields
@@ -183,33 +226,32 @@ exports.create = async (req, res, next) => {
     const existingPhone = await Employee.findOne({ where: { phoneNumber } });
     if (existingPhone) throw new AppError('An employee with this phone number already exists', 400);
 
-    // Resolve department (optional)
-    let resolvedDepartmentId = null;
-    let resolvedPositionId = null;
+    // Reject name-only linking — an id is required to establish a relationship.
+    if (deptName && !departmentId) throw new AppError('departmentId is required to assign a department', 400);
+    if (position && !positionId) throw new AppError('positionId is required to assign a position', 400);
+    if (reportingManager && !reportingManagerId) throw new AppError('reportingManagerId is required to set a reporting manager', 400);
 
-    if (deptName) {
-      const dept = await Department.findOne({ where: { name: deptName, companyId: req.user.companyId } });
-      if (!dept) throw new AppError(`Department "${deptName}" not found`, 400);
-      resolvedDepartmentId = dept.id;
+    // Resolve department (optional) — linked by id only
+    const dept = await resolveDepartment(req.user.companyId, departmentId);
+    const resolvedDepartmentId = dept ? dept.id : null;
 
-      // Validate position exists in the selected department (optional)
-      if (position) {
-        const pos = await Position.findOne({
-          where: { title: position, departmentId: dept.id },
-        });
-        if (!pos) {
-          throw new AppError('Selected position does not exist in this department', 400);
-        }
-        resolvedPositionId = pos.id;
-      }
-    }
+    // Resolve position (optional) — linked by id only
+    const pos = await resolvePosition(resolvedDepartmentId, positionId);
+    const resolvedPositionId = pos ? pos.id : null;
+
+    // Resolve reporting manager (optional) — linked by id only
+    const mgr = await resolveReportingManager(req.user.companyId, reportingManagerId);
 
     const id = await generateEmployeeId();
 
     const employee = await Employee.create({
       id,
       firstName, lastName, email, phoneNumber, gender,
-      departmentId: resolvedDepartmentId, position: resolvedPositionId, employmentType,
+      departmentId: resolvedDepartmentId,
+      position: resolvedPositionId,
+      reportingManager: mgr ? `${mgr.firstName} ${mgr.lastName}` : null,
+      reportingManagerId: mgr ? mgr.id : null,
+      employmentType,
       hireDate: hireDate || new Date().toISOString().split('T')[0],
       status: status || 'Active',
       companyId: req.user.companyId,
@@ -229,8 +271,12 @@ exports.create = async (req, res, next) => {
         firstName: employee.firstName,
         lastName: employee.lastName,
         email: employee.email,
-        department: deptName,
-        position: position || null,
+        department: dept ? dept.name : null,
+        departmentId: resolvedDepartmentId,
+        position: pos ? pos.title : null,
+        positionId: resolvedPositionId,
+        reportingManager: employee.reportingManager,
+        reportingManagerId: employee.reportingManagerId,
         status: employee.status,
       },
     });
@@ -249,7 +295,7 @@ exports.update = async (req, res, next) => {
     const updatableFields = [
       'firstName', 'lastName', 'email', 'phoneNumber', 'gender',
       'dob', 'address', 'emergencyContact',
-      'employmentType', 'hireDate', 'reportingManager', 'status', 'photoUrl',
+      'employmentType', 'hireDate', 'status', 'photoUrl',
     ];
 
     const updates = {};
@@ -259,27 +305,37 @@ exports.update = async (req, res, next) => {
       }
     }
 
-    // Handle department update — if department changes, reset position
-    if (req.body.department !== undefined) {
-      if (req.body.department) {
-        const dept = await Department.findOne({ where: { name: req.body.department, companyId: req.user.companyId } });
-        if (!dept) throw new AppError(`Department "${req.body.department}" not found`, 400);
+    // Handle reporting manager update — linked by id only
+    if (req.body.reportingManagerId !== undefined) {
+      if (req.body.reportingManager && !req.body.reportingManagerId) {
+        throw new AppError('reportingManagerId is required to set a reporting manager', 400);
+      }
+      const mgr = await resolveReportingManager(req.user.companyId, req.body.reportingManagerId);
+      updates.reportingManager = mgr ? `${mgr.firstName} ${mgr.lastName}` : null;
+      updates.reportingManagerId = mgr ? mgr.id : null;
+    }
 
+    // Handle department update — linked by id only; if department changes, reset position
+    if (req.body.departmentId !== undefined) {
+      if (req.body.department && !req.body.departmentId) {
+        throw new AppError('departmentId is required to assign a department', 400);
+      }
+      const dept = await resolveDepartment(req.user.companyId, req.body.departmentId);
+
+      if (dept) {
         const departmentChanged = dept.id !== employee.departmentId;
         updates.departmentId = dept.id;
 
         if (departmentChanged) {
           // Position must be re-specified when department changes
-          if (!req.body.position) {
+          if (req.body.positionId === undefined) {
             throw new AppError(
               'Department changed — position must be re-specified for the new department',
               400
             );
           }
           // Validate new position belongs to the new department
-          const newPos = await Position.findOne({
-            where: { title: req.body.position, departmentId: dept.id },
-          });
+          const newPos = await resolvePosition(dept.id, req.body.positionId);
           if (!newPos) {
             throw new AppError('Selected position does not exist in the new department', 400);
           }
@@ -290,16 +346,13 @@ exports.update = async (req, res, next) => {
         updates.departmentId = null;
         updates.position = null;
       }
-    } else if (req.body.position !== undefined) {
-      if (req.body.position) {
-        // Position update without department change — validate position belongs to current department
-        const currentDeptId = employee.departmentId;
+    } else if (req.body.positionId !== undefined) {
+      const currentDeptId = employee.departmentId;
+      if (req.body.positionId) {
         if (!currentDeptId) {
           throw new AppError('Cannot set position — employee has no department assigned', 400);
         }
-        const pos = await Position.findOne({
-          where: { title: req.body.position, departmentId: currentDeptId },
-        });
+        const pos = await resolvePosition(currentDeptId, req.body.positionId);
         if (!pos) {
           throw new AppError('Selected position does not exist in this department', 400);
         }
@@ -315,17 +368,20 @@ exports.update = async (req, res, next) => {
     // Re-fetch with department name and position title
     const updated = await Employee.findByPk(req.params.id, {
       include: [
-        { model: Department, as: 'Department', attributes: ['name'] },
+        { model: Department, as: 'Department', attributes: ['id', 'name'] },
         { model: Position, as: 'Position', attributes: ['id', 'title'] },
       ],
     });
 
     const result = updated.toJSON();
+    const rawDepartmentId = result.departmentId;
+    const rawPositionId = result.position;
     result.department = result.Department?.name || null;
+    result.departmentId = result.Department?.id || rawDepartmentId || null;
     result.position = result.Position?.title || null;
+    result.positionId = result.Position?.id || rawPositionId || null;
     delete result.Department;
     delete result.Position;
-    delete result.departmentId;
 
     res.json({
       success: true,

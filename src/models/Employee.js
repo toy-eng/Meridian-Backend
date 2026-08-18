@@ -59,6 +59,10 @@ const Employee = sequelize.define('Employee', {
     type: DataTypes.STRING,
     allowNull: true,
   },
+  reportingManagerId: {
+    type: DataTypes.STRING,
+    allowNull: true,
+  },
   status: {
     type: DataTypes.ENUM('Active', 'Inactive', 'Probation', 'OnLeave', 'Resigned', 'Terminated'),
     defaultValue: 'Active',

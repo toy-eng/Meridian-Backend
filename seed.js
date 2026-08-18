@@ -224,6 +224,10 @@ const seed = async () => {
     companyId: company.id,
   });
 
+  // ── Backfill department head ids (head ↔ employee is now bi-directional) ──
+  await design.update({ headId: emp1.id });
+  await dev.update({ headId: emp2.id });
+
   // ── Salary ─────────────────────────────────────────────────
   await Salary.create({ baseSalary: 8500, bonus: 1500, allowances: 500, employeeId: emp1.id });
   await Salary.create({ baseSalary: 7200, bonus: 1000, allowances: 300, employeeId: emp2.id });

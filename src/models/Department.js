@@ -23,6 +23,10 @@ const Department = sequelize.define('Department', {
     allowNull: true,
     defaultValue: 'Not assigned',
   },
+  headId: {
+    type: DataTypes.STRING,
+    allowNull: true,
+  },
   dateCreated: {
     type: DataTypes.DATEONLY,
     defaultValue: () => new Date().toISOString().split('T')[0],
