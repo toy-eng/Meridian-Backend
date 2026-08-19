@@ -20,9 +20,18 @@ const Document = sequelize.define('Document', {
     type: DataTypes.DATEONLY,
     defaultValue: () => new Date().toISOString().split('T')[0],
   },
-  fileUrl: {
+  data: {
+    // Raw file bytes stored directly in Postgres (bytea).
+    type: DataTypes.BLOB,
+    allowNull: true,
+  },
+  mimeType: {
     type: DataTypes.STRING,
-    allowNull: false,
+    allowNull: true,
+  },
+  size: {
+    type: DataTypes.INTEGER,
+    allowNull: true,
   },
   employeeId: {
     type: DataTypes.STRING,

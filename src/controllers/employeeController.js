@@ -1,8 +1,16 @@
 const { Op } = require('sequelize');
+const multer = require('multer');
 const { Employee, Department, Position, Education, Salary, BankAccount, Document, Note } = require('../models');
 const AppError = require('../utils/AppError');
 const { generateEmployeeId } = require('../utils/generateId');
 const logActivity = require('../utils/activityLogger');
+
+// Max document size: 200 KB (in-memory upload, stored as bytea in Postgres).
+const MAX_DOCUMENT_SIZE = 200 * 1024;
+const documentUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: MAX_DOCUMENT_SIZE },
+});
 
 // ─── Include helper ─────────────────────────────────────────
 
@@ -563,15 +571,17 @@ exports.addDocument = async (req, res, next) => {
     const employee = await Employee.findOne({ where: { id: req.params.id, companyId: req.user.companyId } });
     if (!employee) throw new AppError('Employee not found', 404);
 
-    const { name, type, fileUrl } = req.body;
+    const { name, type } = req.body;
     if (!name) throw new AppError('Document name is required', 400);
     if (!type) throw new AppError('Document type is required', 400);
-    if (!fileUrl) throw new AppError('fileUrl is required — upload the file to a cloud service and provide the URL', 400);
+    if (!req.file) throw new AppError('File is required', 400);
 
     const document = await Document.create({
       name,
       type,
-      fileUrl,
+      data: req.file.buffer,
+      mimeType: req.file.mimetype,
+      size: req.file.size,
       employeeId: employee.id,
     });
 
@@ -589,7 +599,8 @@ exports.addDocument = async (req, res, next) => {
           name: document.name,
           type: document.type,
           uploadDate: document.uploadDate,
-          fileUrl: document.fileUrl,
+          mimeType: document.mimeType,
+          size: document.size,
         },
       },
     });
@@ -618,7 +629,7 @@ exports.deleteDocument = async (req, res, next) => {
   }
 };
 
-// ─── 2.9.3 Download Document (proxy from Cloudinary) ────────
+// ─── 2.9.3 Download Document (served from Postgres bytea) ───
 
 exports.downloadDocument = async (req, res, next) => {
   try {
@@ -629,29 +640,22 @@ exports.downloadDocument = async (req, res, next) => {
       where: { id: req.params.documentId, employeeId: req.params.id },
     });
     if (!document) throw new AppError('Document not found', 404);
-    if (!document.fileUrl) throw new AppError('Document has no file URL', 404);
+    if (!document.data) throw new AppError('Document has no stored file', 404);
 
-    const response = await fetch(document.fileUrl);
-    if (!response.ok) {
-      throw new AppError('Failed to fetch file from storage', 500);
-    }
-
-    const contentType = response.headers.get('content-type') || 'application/octet-stream';
-    const contentLength = response.headers.get('content-length');
+    const contentType = document.mimeType || 'application/octet-stream';
 
     res.setHeader('Content-Type', contentType);
     res.setHeader('Content-Disposition', `attachment; filename="${document.name}"`);
-    if (contentLength) {
-      res.setHeader('Content-Length', contentLength);
-    }
-
-    // Pipe the Cloudinary response to the client
-    const arrayBuffer = await response.arrayBuffer();
-    res.send(Buffer.from(arrayBuffer));
+    res.setHeader('Content-Length', document.data.length);
+    res.send(document.data);
   } catch (error) {
     next(error);
   }
 };
+
+// ─── Document upload middleware (multipart, 200 KB limit) ───
+
+exports.documentUpload = documentUpload.single('file');
 
 // ─── 2.10.1 Add Note ────────────────────────────────────────
 
