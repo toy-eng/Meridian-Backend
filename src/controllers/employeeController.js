@@ -12,6 +12,19 @@ const documentUpload = multer({
   limits: { fileSize: MAX_DOCUMENT_SIZE },
 });
 
+// Max professional headshot size: 1 MB (in-memory upload, stored as bytea).
+const MAX_HEADSHOT_SIZE = 1 * 1024 * 1024;
+const headshotUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: MAX_HEADSHOT_SIZE },
+});
+
+// Allowed headshot image types (mime type + magic-byte signature).
+const ALLOWED_HEADSHOT_MIME = new Set(['image/png', 'image/jpeg', 'image/jpg']);
+
+// Internal headshot columns that must never leak into JSON responses.
+const HEADSHOT_INTERNAL_FIELDS = ['professionalHeadshotData', 'professionalHeadshotMimeType'];
+
 // ─── Include helper ─────────────────────────────────────────
 
 const fullInclude = [
@@ -27,7 +40,7 @@ const fullInclude = [
 const basicAttributes = [
   'id', 'firstName', 'lastName', 'email', 'phoneNumber',
   'departmentId', 'position', 'employmentType', 'status',
-  'hireDate', 'photoUrl', 'reportingManagerId',
+  'hireDate', 'photoUrl', 'professionalHeadshot', 'reportingManagerId',
 ];
 
 // ─── Resolve helpers (id-only linking; name/title is display-only) ──
@@ -199,6 +212,9 @@ exports.getById = async (req, res, next) => {
       result.positionId = result.Position.id;
       delete result.Position;
     }
+    // The raw headshot bytes are served via the dedicated endpoint — never
+    // include them in JSON responses.
+    stripHeadshotInternals(result);
 
     res.json({
       success: true,
@@ -208,6 +224,58 @@ exports.getById = async (req, res, next) => {
     next(error);
   }
 };
+
+// ─── Headshot helpers ───────────────────────────────────────
+
+/**
+ * Remove the raw headshot bytea/mime columns from an employee object so they
+ * are never serialized into JSON responses.
+ */
+function stripHeadshotInternals(employeeObj) {
+  for (const field of HEADSHOT_INTERNAL_FIELDS) {
+    delete employeeObj[field];
+  }
+  return employeeObj;
+}
+
+/**
+ * Validate an uploaded headshot file — PNG/JPG/JPEG only.
+ * Checks both the declared mime type and the file's magic bytes so a spoofed
+ * Content-Type header can't smuggle in an arbitrary file.
+ */
+function validateHeadshotFile(file) {
+  const buf = file.buffer;
+  const isPng = buf.length >= 8
+    && buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4e && buf[3] === 0x47;
+  const isJpeg = buf.length >= 3 && buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff;
+
+  if (!ALLOWED_HEADSHOT_MIME.has(file.mimetype) || (!isPng && !isJpeg)) {
+    throw new AppError('Only PNG, JPG, and JPEG images are allowed.', 400);
+  }
+}
+
+/**
+ * Build the full employee response object (matches GET /employees/:id).
+ * Re-fetches with all nested data and strips internal headshot columns.
+ * @returns {Promise<object>}
+ */
+async function buildFullEmployeeResponse(employeeId) {
+  const employee = await Employee.findByPk(employeeId, { include: fullInclude });
+
+  const result = employee.toJSON();
+  if (result.Department) {
+    result.department = result.Department.name;
+    result.departmentId = result.Department.id;
+    delete result.Department;
+  }
+  if (result.Position) {
+    result.position = result.Position.title;
+    result.positionId = result.Position.id;
+    delete result.Position;
+  }
+  stripHeadshotInternals(result);
+  return result;
+}
 
 // ─── 2.3 Create Employee ────────────────────────────────────
 
@@ -656,6 +724,114 @@ exports.downloadDocument = async (req, res, next) => {
 // ─── Document upload middleware (multipart, 200 KB limit) ───
 
 exports.documentUpload = documentUpload.single('file');
+
+// ─── 2.9.4 Upload Professional Headshot ────────────────────
+
+/**
+ * Headshot upload middleware (multipart, 1 MB limit, field: `file`).
+ * Wraps multer so a file-size violation surfaces a clear 400 with the 1 MB
+ * limit (the global handler's LIMIT_FILE_SIZE message is document-specific).
+ */
+exports.headshotUpload = (req, res, next) => {
+  headshotUpload.single('file')(req, res, (err) => {
+    if (err && err.code === 'LIMIT_FILE_SIZE') {
+      return next(new AppError('File is too large. Maximum size is 1 MB.', 400));
+    }
+    if (err) return next(err);
+    next();
+  });
+};
+
+exports.addHeadshot = async (req, res, next) => {
+  try {
+    const employee = await Employee.findOne({ where: { id: req.params.id, companyId: req.user.companyId } });
+    if (!employee) throw new AppError('Employee not found', 404);
+
+    if (!req.file) throw new AppError('File is required', 400);
+
+    validateHeadshotFile(req.file);
+
+    // Same storage mechanism as documents (bytea in Postgres). Re-uploading
+    // simply overwrites the previous bytes, and the old file is replaced.
+    await employee.update({
+      professionalHeadshotData: req.file.buffer,
+      professionalHeadshotMimeType: req.file.mimetype,
+      professionalHeadshot: `/api/employees/${employee.id}/headshot`,
+    });
+
+    await logActivity({
+      action: `You updated the professional headshot for ${employee.firstName} ${employee.lastName}`,
+      type: 'employee',
+      companyId: req.user.companyId,
+    });
+
+    const result = await buildFullEmployeeResponse(employee.id);
+
+    res.json({
+      success: true,
+      message: 'Professional headshot uploaded successfully',
+      data: { employee: result },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// ─── 2.9.5 Delete Professional Headshot ────────────────────
+
+exports.deleteHeadshot = async (req, res, next) => {
+  try {
+    const employee = await Employee.findOne({ where: { id: req.params.id, companyId: req.user.companyId } });
+    if (!employee) throw new AppError('Employee not found', 404);
+
+    // Idempotent: if there's nothing to remove, still succeed so the
+    // frontend never sees an error.
+    if (employee.professionalHeadshot) {
+      await employee.update({
+        professionalHeadshotData: null,
+        professionalHeadshotMimeType: null,
+        professionalHeadshot: null,
+      });
+
+      await logActivity({
+        action: `You removed the professional headshot for ${employee.firstName} ${employee.lastName}`,
+        type: 'employee',
+        companyId: req.user.companyId,
+      });
+    }
+
+    const result = await buildFullEmployeeResponse(employee.id);
+
+    res.json({
+      success: true,
+      message: 'Professional headshot removed successfully',
+      data: { employee: result },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// ─── 2.9.6 Get Professional Headshot (served from bytea) ───
+
+exports.getHeadshot = async (req, res, next) => {
+  try {
+    const employee = await Employee.findOne({ where: { id: req.params.id, companyId: req.user.companyId } });
+    if (!employee) throw new AppError('Employee not found', 404);
+
+    if (!employee.professionalHeadshotData) {
+      throw new AppError('No headshot available', 404);
+    }
+
+    const contentType = employee.professionalHeadshotMimeType || 'image/png';
+    res.setHeader('Content-Type', contentType);
+    res.setHeader('Cache-Control', 'private, max-age=86400');
+    res.setHeader('Content-Length', employee.professionalHeadshotData.length);
+    res.send(employee.professionalHeadshotData);
+  } catch (error) {
+    next(error);
+  }
+};
 
 // ─── 2.10.1 Add Note ────────────────────────────────────────
 

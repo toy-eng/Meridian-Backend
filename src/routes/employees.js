@@ -25,6 +25,11 @@ router.post('/:id/documents', employeeController.documentUpload, employeeControl
 router.get('/:id/documents/:documentId/download', employeeController.downloadDocument);
 router.delete('/:id/documents/:documentId', employeeController.deleteDocument);
 
+// Professional headshot (same storage approach as documents)
+router.post('/:id/headshot', employeeController.headshotUpload, employeeController.addHeadshot);
+router.get('/:id/headshot', employeeController.getHeadshot);
+router.delete('/:id/headshot', employeeController.deleteHeadshot);
+
 router.post('/:id/notes', employeeController.addNote);
 router.delete('/:id/notes/:noteId', employeeController.deleteNote);
 

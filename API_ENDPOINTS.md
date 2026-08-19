@@ -808,9 +808,114 @@ The file is returned as a binary download with the following headers:
 
 ---
 
-### 2.10 Employee Notes
+### 2.10 Employee Professional Headshot
 
-#### 2.10.1 Add Note
+> The professional headshot is stored the same way as documents — the image
+> bytes are stored directly in Postgres (bytea) and served via a dedicated
+> endpoint. No external/Cloudinary storage is needed on the frontend; it just
+> uploads the file as `multipart/form-data` with a single `file` field.
+> `professionalHeadshot` is a separate field from `photoUrl` and is returned
+> (string URL/path, nullable) on all employee reads.
+
+#### 2.10.1 Upload Professional Headshot
+
+**`POST /employees/:id/headshot`**
+
+> **Content-Type:** `multipart/form-data`
+
+**Request Form Field:**
+
+| Field | Type | Rules |
+|-------|------|-------|
+| file | file | Required, **PNG/JPG/JPEG only**, max **1 MB** |
+
+Replaces any existing headshot (the old image bytes are overwritten).
+
+**Success Response (200):** returns the **updated employee object** so the frontend can refresh.
+
+```json
+{
+  "success": true,
+  "message": "Professional headshot uploaded successfully",
+  "data": {
+    "employee": {
+      "id": "EMP-26-07-001",
+      "firstName": "Brooklyn",
+      "lastName": "Simmons",
+      "email": "brok-simms@mail.com",
+      "phoneNumber": "+1 312 908 1234",
+      "department": "Design",
+      "position": "Creative Director",
+      "employmentType": "Full-time",
+      "status": "Active",
+      "hireDate": "2024-01-10",
+      "photoUrl": null,
+      "professionalHeadshot": "/api/employees/EMP-26-07-001/headshot"
+    }
+  }
+}
+```
+
+**Error Responses:**
+
+```json
+{ "success": false, "message": "Only PNG, JPG, and JPEG images are allowed." }
+```
+
+```json
+{ "success": false, "message": "File is too large. Maximum size is 1 MB." }
+```
+
+```json
+{ "success": false, "message": "File is required" }
+```
+
+#### 2.10.2 Get Professional Headshot
+
+**`GET /employees/:id/headshot`**
+
+Returns the stored headshot image bytes with the correct `Content-Type`
+(`image/png` or `image/jpeg`). This is the URL the `professionalHeadshot`
+field points to.
+
+**Success Response (200):** image binary.
+
+**Error Responses:**
+
+```json
+{ "success": false, "message": "Employee not found" }
+```
+
+```json
+{ "success": false, "message": "No headshot available" }
+```
+
+#### 2.10.3 Remove Professional Headshot
+
+**`DELETE /employees/:id/headshot`**
+
+Deletes the stored headshot image and resets `professionalHeadshot` to `null`.
+Idempotent — succeeds even if there is no headshot, so the frontend never
+sees an error. Returns the **updated employee object** (200).
+
+```json
+{
+  "success": true,
+  "message": "Professional headshot removed successfully",
+  "data": {
+    "employee": {
+      "id": "EMP-26-07-001",
+      "professionalHeadshot": null
+    }
+  }
+}
+```
+
+---
+
+### 2.11 Employee Notes
+
+#### 2.11.1 Add Note
 
 **`POST /employees/:id/notes`**
 
@@ -845,7 +950,7 @@ The file is returned as a binary download with the following headers:
 }
 ```
 
-#### 2.10.2 Delete Note
+#### 2.11.2 Delete Note
 
 **`DELETE /employees/:id/notes/:noteId`**
 
@@ -1597,6 +1702,7 @@ Check if the API is running.
   "reportingManager": "string (optional)",
   "status": "string (Active | Inactive | Probation | OnLeave | Resigned | Terminated)",
   "photoUrl": "string (optional, URL to image)",
+  "professionalHeadshot": "string (optional, nullable — URL/path served by GET /employees/:id/headshot)",
   "education": "Education[]",
   "salary": "Salary",
   "bankAccount": "BankAccount",

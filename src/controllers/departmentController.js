@@ -63,7 +63,7 @@ exports.getById = async (req, res, next) => {
 
     const members = await Employee.findAll({
       where: { departmentId: department.id, companyId: req.user.companyId },
-      attributes: ['id', 'firstName', 'lastName', 'email', 'position', 'status', 'hireDate', 'photoUrl'],
+      attributes: ['id', 'firstName', 'lastName', 'email', 'position', 'status', 'hireDate', 'photoUrl', 'professionalHeadshot'],
       include: [{ model: Position, as: 'Position', attributes: ['title'] }],
     });
 

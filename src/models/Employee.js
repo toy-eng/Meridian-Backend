@@ -71,6 +71,22 @@ const Employee = sequelize.define('Employee', {
     type: DataTypes.STRING,
     allowNull: true,
   },
+  // Professional headshot — same storage approach as documents (bytea in
+  // Postgres). `professionalHeadshot` is the public URL/path exposed to the
+  // frontend; the raw bytes + mime type live in dedicated columns and are
+  // never returned in JSON responses.
+  professionalHeadshot: {
+    type: DataTypes.STRING,
+    allowNull: true,
+  },
+  professionalHeadshotData: {
+    type: DataTypes.BLOB,
+    allowNull: true,
+  },
+  professionalHeadshotMimeType: {
+    type: DataTypes.STRING,
+    allowNull: true,
+  },
   departmentId: {
     type: DataTypes.STRING,
     allowNull: true,

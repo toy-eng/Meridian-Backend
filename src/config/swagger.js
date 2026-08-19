@@ -159,6 +159,7 @@ const options = {
             status: { type: 'string', enum: ['Active', 'Inactive', 'Probation', 'Resigned', 'Terminated'] },
             hireDate: { type: 'string', format: 'date', example: '2024-01-10' },
             photoUrl: { type: 'string', nullable: true },
+            professionalHeadshot: { type: 'string', nullable: true, description: 'URL/path to the employee\'s professional headshot (served by GET /employees/{id}/headshot)' },
           },
         },
         EmployeeDetail: {
@@ -430,6 +431,7 @@ const options = {
             status: { type: 'string', example: 'Active' },
             hireDate: { type: 'string', format: 'date', example: '2024-01-10' },
             photoUrl: { type: 'string', nullable: true, example: 'https://cdn.staffsync.com/photos/emp-101.jpg' },
+            professionalHeadshot: { type: 'string', nullable: true, example: '/api/employees/EMP-26-07-001/headshot' },
           },
         },
         DepartmentOverview: {
@@ -811,6 +813,62 @@ const options = {
             { name: 'documentId', in: 'path', required: true, schema: { type: 'string' } },
           ],
           responses: { 200: { description: 'Document deleted' } },
+        },
+      },
+      '/employees/{id}/headshot': {
+        post: {
+          tags: ['Employees - Headshot'],
+          summary: 'Upload Professional Headshot',
+          description: 'Upload the employee\'s professional headshot (multipart/form-data, field `file`). PNG/JPG/JPEG only, max 1 MB. Replaces any existing headshot. Returns the updated employee object.',
+          security: [{ bearerAuth: [] }],
+          parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
+          requestBody: {
+            required: true,
+            content: {
+              'multipart/form-data': {
+                schema: {
+                  type: 'object',
+                  required: ['file'],
+                  properties: {
+                    file: { type: 'string', format: 'binary', description: 'PNG/JPG/JPEG image, max 1 MB' },
+                  },
+                },
+              },
+            },
+          },
+          responses: {
+            200: {
+              description: 'Headshot uploaded — updated employee returned',
+              content: { 'application/json': { schema: { type: 'object', properties: { success: { type: 'boolean' }, message: { type: 'string' }, data: { type: 'object', properties: { employee: { $ref: '#/components/schemas/EmployeeDetail' } } } } } } },
+            },
+            400: { description: 'Invalid file type/size, or no file provided', content: { 'application/json': { schema: { $ref: '#/components/schemas/ErrorResponse' } } } },
+            404: { description: 'Employee not found' },
+          },
+        },
+        get: {
+          tags: ['Employees - Headshot'],
+          summary: 'Get Professional Headshot',
+          description: 'Returns the employee\'s headshot image bytes (served from Postgres bytea) with the correct Content-Type.',
+          security: [{ bearerAuth: [] }],
+          parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
+          responses: {
+            200: { description: 'Headshot image bytes', content: { 'image/*': {} } },
+            404: { description: 'Employee or headshot not found' },
+          },
+        },
+        delete: {
+          tags: ['Employees - Headshot'],
+          summary: 'Remove Professional Headshot',
+          description: 'Delete the employee\'s headshot image and reset `professionalHeadshot` to null. Idempotent — succeeds even if there is no headshot. Returns the updated employee object.',
+          security: [{ bearerAuth: [] }],
+          parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
+          responses: {
+            200: {
+              description: 'Headshot removed — updated employee returned',
+              content: { 'application/json': { schema: { type: 'object', properties: { success: { type: 'boolean' }, message: { type: 'string' }, data: { type: 'object', properties: { employee: { $ref: '#/components/schemas/EmployeeDetail' } } } } } } },
+            },
+            404: { description: 'Employee not found' },
+          },
         },
       },
       '/employees/{id}/notes': {

@@ -56,7 +56,7 @@ exports.getStats = async (req, res, next) => {
       where: { companyId },
       order: [['createdAt', 'DESC']],
       limit: 5,
-      attributes: ['id', 'firstName', 'lastName', 'email', 'phoneNumber', 'employmentType', 'status', 'hireDate', 'photoUrl'],
+      attributes: ['id', 'firstName', 'lastName', 'email', 'phoneNumber', 'employmentType', 'status', 'hireDate', 'photoUrl', 'professionalHeadshot'],
       include: [
         { model: Department, as: 'Department', attributes: ['name'] },
         { model: Position, attributes: ['title'] },
