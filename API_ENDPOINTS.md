@@ -322,6 +322,48 @@ Update the authenticated user's password.
 
 ---
 
+### 1.8 Delete Account
+
+Permanently delete the authenticated admin's account **and ALL associated company data** (departments, positions, employees, education, salary, bank accounts, documents, notes, activity). This action is **irreversible**. Requires the current password to confirm.
+
+**`DELETE /auth/account`**
+
+**Auth:** `Bearer <token>` required.
+
+**Request Body:**
+
+```json
+{
+  "password": "securePassword123"
+}
+```
+
+**Validation:**
+| Field | Type | Rules |
+|-------|------|-------|
+| password | string | Required, must match the current password |
+
+**Success Response (200):**
+
+```json
+{
+  "success": true,
+  "message": "Account and all associated data deleted successfully"
+}
+```
+
+**Error Responses:**
+
+```json
+{ "success": false, "message": "Password is required to delete your account" }
+```
+
+```json
+{ "success": false, "message": "Incorrect password" }
+```
+
+---
+
 ## 2. Employees
 
 ---

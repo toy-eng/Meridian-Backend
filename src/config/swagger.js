@@ -608,6 +608,33 @@ const options = {
           },
         },
       },
+      '/auth/account': {
+        delete: {
+          tags: ['Authentication'],
+          summary: 'Delete Account',
+          description: 'Permanently delete the authenticated admin\'s account and ALL associated company data (departments, positions, employees and their sub-resources). Requires the current password to confirm. This is irreversible.',
+          security: [{ bearerAuth: [] }],
+          requestBody: {
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  required: ['password'],
+                  properties: {
+                    password: { type: 'string', example: 'securePassword123', description: 'Current password to confirm deletion' },
+                  },
+                },
+              },
+            },
+          },
+          responses: {
+            200: { description: 'Account and all associated data deleted' },
+            400: { description: 'Password is required to delete your account' },
+            401: { description: 'Incorrect password' },
+            404: { description: 'Account not found' },
+          },
+        },
+      },
 
       // ════════════════════════════════════════════════════════
       // EMPLOYEES

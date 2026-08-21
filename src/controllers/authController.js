@@ -2,7 +2,8 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
 const config = require('../config');
-const { Admin, Company } = require('../models');
+const { Admin, Company, Activity } = require('../models');
+const { sequelize } = require('../config/database');
 const AppError = require('../utils/AppError');
 const { setOtp, getOtp, deleteOtp } = require('../utils/otpStore');
 const { sendOtpEmail } = require('../utils/email');
@@ -272,6 +273,45 @@ exports.changePassword = async (req, res, next) => {
     res.json({
       success: true,
       message: 'Password changed successfully',
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * DELETE /auth/account
+ * Permanently delete the authenticated admin's account and all associated
+ * company data (departments, positions, employees and their sub-resources).
+ * Requires the current password to confirm this destructive action.
+ */
+exports.deleteAccount = async (req, res, next) => {
+  try {
+    const { password } = req.body;
+
+    const admin = await Admin.findByPk(req.user.id);
+    if (!admin) throw new AppError('Account not found', 404);
+
+    if (!password) throw new AppError('Password is required to delete your account', 400);
+    const isMatch = await bcrypt.compare(password, admin.password);
+    if (!isMatch) throw new AppError('Incorrect password', 401);
+
+    const company = await Company.findOne({ where: { adminId: admin.id } });
+
+    await sequelize.transaction(async (t) => {
+      // Activities have no FK to companies — remove them manually.
+      if (company) {
+        await Activity.destroy({ where: { companyId: company.id }, transaction: t });
+        // DB-level CASCADE removes departments → positions, and employees →
+        // education, salaries, bank accounts, documents, notes.
+        await company.destroy({ transaction: t });
+      }
+      await admin.destroy({ transaction: t });
+    });
+
+    res.json({
+      success: true,
+      message: 'Account and all associated data deleted successfully',
     });
   } catch (error) {
     next(error);
