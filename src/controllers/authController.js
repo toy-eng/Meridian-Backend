@@ -294,7 +294,7 @@ exports.deleteAccount = async (req, res, next) => {
 
     if (!password) throw new AppError('Password is required to delete your account', 400);
     const isMatch = await bcrypt.compare(password, admin.password);
-    if (!isMatch) throw new AppError('Incorrect password', 401);
+    if (!isMatch) throw new AppError('Incorrect password', 400);
 
     const company = await Company.findOne({ where: { adminId: admin.id } });
 

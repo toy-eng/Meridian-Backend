@@ -629,8 +629,7 @@ const options = {
           },
           responses: {
             200: { description: 'Account and all associated data deleted' },
-            400: { description: 'Password is required to delete your account' },
-            401: { description: 'Incorrect password' },
+            400: { description: 'Password is required, or the password is incorrect' },
             404: { description: 'Account not found' },
           },
         },

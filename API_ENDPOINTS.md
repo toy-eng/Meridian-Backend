@@ -352,7 +352,7 @@ Permanently delete the authenticated admin's account **and ALL associated compan
 }
 ```
 
-**Error Responses:**
+**Error Responses (all `400`):**
 
 ```json
 { "success": false, "message": "Password is required to delete your account" }
