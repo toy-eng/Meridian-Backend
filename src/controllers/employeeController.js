@@ -4,6 +4,7 @@ const { Employee, Department, Position, Education, Salary, BankAccount, Document
 const AppError = require('../utils/AppError');
 const { generateEmployeeId } = require('../utils/generateId');
 const logActivity = require('../utils/activityLogger');
+const { getHeadEmployeeIds, resolvePositionTitle } = require('../utils/headPosition');
 
 // Max document size: 200 KB (in-memory upload, stored as bytea in Postgres).
 const MAX_DOCUMENT_SIZE = 200 * 1024;
@@ -157,11 +158,14 @@ exports.list = async (req, res, next) => {
       offset,
     });
 
+    // Department heads display 'HOD' unless a position is assigned to them.
+    const headIds = await getHeadEmployeeIds(rows.map((r) => r.id), req.user.companyId);
+
     const employees = rows.map((emp) => {
       const e = emp.toJSON();
       const positionId = e.position; // raw position id (Employee.position stores the id)
       e.department = e.Department?.name || null;
-      e.position = e.Position?.title || null;
+      e.position = resolvePositionTitle(e.Position?.title || null, headIds.has(e.id));
       e.positionId = positionId || e.Position?.id || null;
       delete e.Department;
       delete e.Position;
@@ -206,12 +210,9 @@ exports.getById = async (req, res, next) => {
       result.departmentId = result.Department.id;
       delete result.Department;
     }
-    // Flatten position title (keep positionId)
-    if (result.Position) {
-      result.position = result.Position.title;
-      result.positionId = result.Position.id;
-      delete result.Position;
-    }
+    // Flatten position title (keep positionId); department heads display 'HOD'
+    // when no position is personally assigned to them.
+    await applyPositionTitle(result, employee.id, req.user.companyId);
     // The raw headshot bytes are served via the dedicated endpoint — never
     // include them in JSON responses.
     stripHeadshotInternals(result);
@@ -255,6 +256,25 @@ function validateHeadshotFile(file) {
 }
 
 /**
+ * Flatten the employee's position and apply the HOD display rule: a personally
+ * assigned position wins; otherwise a department head displays as 'HOD'.
+ */
+async function applyPositionTitle(result, employeeId, companyId) {
+  if (result.Position) {
+    result.position = result.Position.title;
+    result.positionId = result.Position.id;
+  } else {
+    const isHead = (await Department.count({ where: { headId: employeeId, companyId } })) > 0;
+    if (isHead) {
+      result.position = 'HOD';
+      result.positionId = null;
+    }
+  }
+  delete result.Position;
+  return result;
+}
+
+/**
  * Build the full employee response object (matches GET /employees/:id).
  * Re-fetches with all nested data and strips internal headshot columns.
  * @returns {Promise<object>}
@@ -268,11 +288,7 @@ async function buildFullEmployeeResponse(employeeId) {
     result.departmentId = result.Department.id;
     delete result.Department;
   }
-  if (result.Position) {
-    result.position = result.Position.title;
-    result.positionId = result.Position.id;
-    delete result.Position;
-  }
+  await applyPositionTitle(result, employee.id, employee.companyId);
   stripHeadshotInternals(result);
   return result;
 }
@@ -464,7 +480,10 @@ exports.update = async (req, res, next) => {
     const rawPositionId = result.position;
     result.department = result.Department?.name || null;
     result.departmentId = result.Department?.id || rawDepartmentId || null;
-    result.position = result.Position?.title || null;
+    // Personally assigned position wins; otherwise a department head shows 'HOD'.
+    const isHead = !result.Position
+      && (await Department.count({ where: { headId: req.params.id, companyId: req.user.companyId } })) > 0;
+    result.position = result.Position?.title || (isHead ? 'HOD' : null);
     result.positionId = result.Position?.id || rawPositionId || null;
     delete result.Department;
     delete result.Position;

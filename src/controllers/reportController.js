@@ -1,6 +1,7 @@
 const PDFDocument = require('pdfkit');
 const { Op, fn, col } = require('sequelize');
 const { Employee, Department, Position, Salary } = require('../models');
+const { getHeadEmployeeIds, resolvePositionTitle } = require('../utils/headPosition');
 
 /**
  * GET /reports/employee-summary
@@ -230,8 +231,10 @@ exports.exportReport = async (req, res, next) => {
       // Section 1: Employee Summary
       csv += '=== EMPLOYEE SUMMARY ===\n';
       csv += 'ID,First Name,Last Name,Email,Department,Position,Status,Hire Date\n';
+      const headIds = await getHeadEmployeeIds(employees.map((e) => e.id), companyId);
       employees.forEach((e) => {
-        csv += `${e.id},${e.firstName},${e.lastName},${e.email},${e.Department?.name || ''},${e.Position?.title || ''},${e.status},${e.hireDate}\n`;
+        const position = resolvePositionTitle(e.Position?.title || null, headIds.has(e.id));
+        csv += `${e.id},${e.firstName},${e.lastName},${e.email},${e.Department?.name || ''},${position},${e.status},${e.hireDate}\n`;
       });
 
       csv += '\n\n';

@@ -1,5 +1,6 @@
 const { Op, fn, col } = require('sequelize');
 const { Employee, Department, Position, Activity } = require('../models');
+const { getHeadEmployeeIds, resolvePositionTitle } = require('../utils/headPosition');
 
 /**
  * Format a Date into a relative time string (e.g. "2 hours ago", "yesterday").
@@ -63,10 +64,13 @@ exports.getStats = async (req, res, next) => {
       ],
     });
 
+    // Department heads display 'HOD' unless a position is assigned to them.
+    const recentHeadIds = await getHeadEmployeeIds(recentEmployees.map((e) => e.id), companyId);
+
     const recent = recentEmployees.map((e) => {
       const r = e.toJSON();
       r.department = r.Department?.name || null;
-      r.position = r.Position?.title || null;
+      r.position = resolvePositionTitle(r.Position?.title || null, recentHeadIds.has(r.id));
       delete r.Department;
       delete r.Position;
       return r;

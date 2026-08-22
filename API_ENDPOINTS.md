@@ -1737,7 +1737,7 @@ Check if the API is running.
   "address": "string (optional)",
   "emergencyContact": "string (optional)",
   "department": "string (references Department.name, optional)",
-  "position": "string (resolved position title from Position model, optional)",
+  "position": "string (resolved position title from Position model; 'HOD' when the employee is a department head with no personally assigned position)",
   "positionId": "string (UUID, FK to Position.id, returned in responses)",
   "employmentType": "string (Full-time | Part-time | Contract | Intern | Remote)",
   "hireDate": "string (ISO date)",

@@ -153,7 +153,7 @@ const options = {
             email: { type: 'string', example: 'brok-simms@mail.com' },
             phoneNumber: { type: 'string', example: '+1 312 908 1234' },
             department: { type: 'string', example: 'Design' },
-            position: { type: 'string', example: 'Creative Director' },
+            position: { type: 'string', example: 'Creative Director', description: 'Personally assigned position title, or \'HOD\' for a department head with no assigned position' },
             positionId: { type: 'string', example: 'a1b2c3d4-e5f6-7890-abcd-ef1234567890' },
             employmentType: { type: 'string', enum: ['Full-time', 'Part-time', 'Contract', 'Intern', 'Remote'] },
             status: { type: 'string', enum: ['Active', 'Inactive', 'Probation', 'Resigned', 'Terminated'] },

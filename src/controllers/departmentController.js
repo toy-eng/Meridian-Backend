@@ -69,7 +69,9 @@ exports.getById = async (req, res, next) => {
 
     const membersWithPosition = members.map((m) => {
       const json = m.toJSON();
-      json.position = json.Position?.title || json.position;
+      // The department head displays 'HOD' unless they have an assigned position.
+      const assignedTitle = json.Position?.title || null;
+      json.position = assignedTitle || (m.id === department.headId ? 'HOD' : json.position);
       delete json.Position;
       return json;
     });
