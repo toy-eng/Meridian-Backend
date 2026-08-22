@@ -26,6 +26,25 @@ const ALLOWED_HEADSHOT_MIME = new Set(['image/png', 'image/jpeg', 'image/jpg']);
 // Internal headshot columns that must never leak into JSON responses.
 const HEADSHOT_INTERNAL_FIELDS = ['professionalHeadshotData', 'professionalHeadshotMimeType'];
 
+// Allowed values for the employee enum fields. On update, invalid values are
+// ignored (not applied) so a bad client payload can't crash the DB write.
+const EMPLOYEE_ENUMS = {
+  gender: ['Male', 'Female', 'Other'],
+  employmentType: ['Full-time', 'Part-time', 'Contract', 'Intern', 'Remote'],
+  status: ['Active', 'Inactive', 'Probation', 'OnLeave', 'Resigned', 'Terminated'],
+};
+
+/**
+ * Check whether a value is a valid YYYY-MM-DD date string.
+ * @param {*} value
+ * @returns {boolean}
+ */
+function isValidDateOnly(value) {
+  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const date = new Date(`${value}T00:00:00Z`);
+  return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === value;
+}
+
 // ─── Include helper ─────────────────────────────────────────
 
 const fullInclude = [
@@ -354,7 +373,7 @@ exports.create = async (req, res, next) => {
       reportingManager: mgr ? `${mgr.firstName} ${mgr.lastName}` : null,
       reportingManagerId: mgr ? mgr.id : null,
       employmentType,
-      hireDate: hireDate || new Date().toISOString().split('T')[0],
+      hireDate: isValidDateOnly(hireDate) ? hireDate : new Date().toISOString().split('T')[0],
       status: status || 'Active',
       companyId: req.user.companyId,
     });
@@ -400,11 +419,36 @@ exports.update = async (req, res, next) => {
       'employmentType', 'hireDate', 'status', 'photoUrl',
     ];
 
+    // Partial update — only apply fields the client actually sent; none are
+    // required. Empty/invalid values (e.g. the frontend sending "Invalid date")
+    // are ignored instead of crashing the DB write.
     const updates = {};
     for (const field of updatableFields) {
-      if (req.body[field] !== undefined) {
-        updates[field] = req.body[field];
+      const value = req.body[field];
+      if (value === undefined) continue;
+
+      if (field === 'dob') {
+        // dob is nullable: null/'' clears it, a valid date sets it, anything
+        // else (e.g. "Invalid date") is ignored.
+        if (value === null || value === '') updates[field] = null;
+        else if (isValidDateOnly(value)) updates[field] = value;
+        continue;
       }
+
+      if (field === 'hireDate') {
+        // hireDate is NOT NULL — only apply it when a valid date is provided.
+        if (isValidDateOnly(value)) updates[field] = value;
+        continue;
+      }
+
+      if (EMPLOYEE_ENUMS[field]) {
+        // Only apply valid enum values (and null for the nullable ones).
+        if (value === null && field !== 'employmentType') updates[field] = null;
+        else if (EMPLOYEE_ENUMS[field].includes(value)) updates[field] = value;
+        continue;
+      }
+
+      updates[field] = value;
     }
 
     // Handle reporting manager update — linked by id only
@@ -537,7 +581,12 @@ exports.updateSalary = async (req, res, next) => {
     });
 
     if (!created) {
-      await salary.update({ baseSalary, bonus, allowances });
+      // Partial update — only apply the fields that were actually sent.
+      const salaryUpdates = {};
+      if (baseSalary !== undefined) salaryUpdates.baseSalary = baseSalary;
+      if (bonus !== undefined) salaryUpdates.bonus = bonus;
+      if (allowances !== undefined) salaryUpdates.allowances = allowances;
+      await salary.update(salaryUpdates);
     }
 
     await logActivity({
@@ -576,7 +625,12 @@ exports.updateBank = async (req, res, next) => {
     });
 
     if (!created) {
-      await bank.update({ bankName, accountName, accountNumber });
+      // Partial update — only apply the fields that were actually sent.
+      const bankUpdates = {};
+      if (bankName !== undefined) bankUpdates.bankName = bankName;
+      if (accountName !== undefined) bankUpdates.accountName = accountName;
+      if (accountNumber !== undefined) bankUpdates.accountNumber = accountNumber;
+      await bank.update(bankUpdates);
     }
 
     res.json({
