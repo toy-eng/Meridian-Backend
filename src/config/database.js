@@ -1,7 +1,8 @@
 const { Sequelize } = require('sequelize');
 const config = require('./index');
 
-// Shared options for both local (discrete DB_* vars) and Heroku (DATABASE_URL).
+// Shared options for both local (discrete DB_* vars) and managed Postgres
+// providers that hand you a single connection URL (Render, etc.).
 const sequelizeOptions = {
   dialect: 'postgres',
   logging: config.isDev ? console.log : false,
@@ -17,11 +18,18 @@ const sequelizeOptions = {
   },
 };
 
-const sequelize = config.db.url
-  ? new Sequelize(config.db.url, {
+// Managed Postgres (Render, etc.) needs SSL for connections that arrive
+// over the public internet; local Postgres does not. A URL that already
+// carries an `sslmode` parameter is left to its own setting.
+const dbUrl = config.db.url;
+const urlIsLocal = /@(localhost|127\.0\.0\.1)/.test(dbUrl);
+const urlSetsSslMode = /[?&]sslmode=/.test(dbUrl);
+const useSsl = Boolean(dbUrl) && !urlIsLocal && !urlSetsSslMode;
+
+const sequelize = dbUrl
+  ? new Sequelize(dbUrl, {
       ...sequelizeOptions,
-      // Heroku Postgres requires SSL; local Postgres does not.
-      dialectOptions: config.isProd
+      dialectOptions: useSsl
         ? { ssl: { require: true, rejectUnauthorized: false } }
         : undefined,
     })
