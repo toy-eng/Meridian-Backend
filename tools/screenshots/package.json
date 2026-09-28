@@ -1,0 +1,12 @@
+{
+  "name": "staffsync-screenshots",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Capture portfolio screenshots of the StaffSync dashboard.",
+  "scripts": {
+    "shots": "node capture.js"
+  },
+  "dependencies": {
+    "puppeteer-core": "latest"
+  }
+}

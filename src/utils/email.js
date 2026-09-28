@@ -8,9 +8,15 @@ const config = require('../config');
 dns.setDefaultResultOrder('ipv4first');
 
 /**
- * Create a reusable transporter using SMTP (Brevo or configured provider).
- * See https://help.brevo.com/hc/en-us/articles/360010425260-How-to-configure-Brevo-SMTP
+ * Two delivery modes:
+ *
+ *  1. Brevo HTTPS API - used whenever BREVO_API_KEY is set. It sends over
+ *     port 443, which is the only way out on hosts that block SMTP ports.
+ *     Render blocks outbound 25/465/587, so this is the mode to use there.
+ *  2. SMTP via nodemailer - the fallback when no API key is configured.
+ *     Fine locally, and on hosts that allow outbound SMTP.
  */
+
 const transporter = nodemailer.createTransport({
   host: config.brevo.smtpHost,
   port: config.brevo.smtpPort,
@@ -19,25 +25,14 @@ const transporter = nodemailer.createTransport({
     user: config.brevo.smtpUser,
     pass: config.brevo.smtpPass,
   },
-  connectionTimeout: 5000, // 5s — don't hang forever if SMTP is unreachable
+  connectionTimeout: 5000, // 5s - don't hang forever if SMTP is unreachable
 });
 
-/**
- * Send a 6-digit OTP email.
- *
- * Strategy:
- *  1. Always try real SMTP first.
- *  2. If SMTP fails in development — log the OTP to the console as a
- *     fallback so the registration flow can still be tested offline.
- *  3. If SMTP fails in production — throw the error (caller returns a 500).
- *
- * @param {string} to - Recipient email address
- * @param {string} otp - The 6-digit OTP code
- */
-async function sendOtpEmail(to, otp) {
-  const mailOptions = {
-    from: `"StaffSync" <${config.brevo.fromEmail}>`,
-    to,
+const BREVO_API_URL = 'https://api.brevo.com/v3/smtp/email';
+
+/** Build the OTP message. Both delivery modes send the same content. */
+function buildOtpEmail(otp) {
+  return {
     subject: 'Your StaffSync Verification Code',
     html: `
       <div style="font-family: Arial, sans-serif; max-width: 480px; margin: 0 auto; padding: 24px;">
@@ -64,25 +59,82 @@ async function sendOtpEmail(to, otp) {
         </p>
       </div>
     `,
+    text: `Your StaffSync verification code is ${otp}. It expires in 5 minutes.`,
   };
+}
+
+/** Send one email through Brevo's HTTPS API (port 443). */
+async function sendViaBrevoApi({ to, subject, html, text }) {
+  const response = await fetch(BREVO_API_URL, {
+    method: 'POST',
+    headers: {
+      'api-key': config.brevo.apiKey,
+      'content-type': 'application/json',
+      accept: 'application/json',
+    },
+    body: JSON.stringify({
+      sender: { name: config.brevo.fromName, email: config.brevo.fromEmail },
+      to: [{ email: to }],
+      subject,
+      htmlContent: html,
+      textContent: text,
+    }),
+    signal: AbortSignal.timeout(15000),
+  });
+
+  if (!response.ok) {
+    const body = await response.text().catch(() => '');
+    const error = new Error(
+      `Brevo API responded ${response.status}: ${body.slice(0, 300) || 'no response body'}`
+    );
+    error.statusCode = 502;
+    throw error;
+  }
+}
+
+/**
+ * Send a 6-digit OTP email.
+ *
+ * Strategy:
+ *  1. Send for real - via the Brevo API when a key is configured, else SMTP.
+ *  2. If delivery fails in development, log the OTP to the console so the
+ *     registration flow can still be tested offline.
+ *  3. If delivery fails in production, throw (the caller answers 502).
+ *
+ * @param {string} to - Recipient email address
+ * @param {string} otp - The 6-digit OTP code
+ */
+async function sendOtpEmail(to, otp) {
+  const message = buildOtpEmail(otp);
+  const useApi = Boolean(config.brevo.apiKey);
 
   try {
-    await transporter.sendMail(mailOptions);
-    console.log(`✅ OTP email sent to ${to}`);
+    if (useApi) {
+      await sendViaBrevoApi({ to, ...message });
+    } else {
+      await transporter.sendMail({
+        from: `"${config.brevo.fromName}" <${config.brevo.fromEmail}>`,
+        to,
+        subject: message.subject,
+        html: message.html,
+        text: message.text,
+      });
+    }
+    console.log(`OTP email sent to ${to} via ${useApi ? 'Brevo API' : 'SMTP'}`);
     return true;
   } catch (err) {
     if (config.isDev) {
-      // Dev fallback — log OTP to console so testing can continue
-      console.log('═══════════════════════════════════════════');
-      console.log('  ⚠️  SMTP unavailable — dev fallback');
-      console.log('  📧 OTP for', to);
-      console.log('  🔑 Code:', otp);
-      console.log('  ⏳ Expires in 5 minutes');
-      console.log('  ❌ SMTP error:', err.message);
-      console.log('═══════════════════════════════════════════');
+      console.log('=====================================================');
+      console.log('  Email delivery unavailable - dev fallback');
+      console.log('  OTP for', to);
+      console.log('  Code:', otp);
+      console.log('  Expires in 5 minutes');
+      console.log('  Error:', err.message);
+      console.log('=====================================================');
       return false;
     }
-    // Production — propagate the error so the caller returns a 500
+    // Production - propagate so the caller returns a clear upstream error.
+    err.statusCode = err.statusCode || 502;
     throw err;
   }
 }

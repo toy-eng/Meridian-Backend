@@ -1,23 +1,17 @@
 # Render Blueprint spec: https://render.com/docs/blueprint-spec
 #
 # Import with: Render Dashboard -> New -> Blueprint -> pick this repo.
-# It creates the Postgres database *and* the web service in one go.
+# It creates the web service only. The database is external (Neon), so
+# DATABASE_URL is prompted for during the import.
 #
-# Keep the database and the web service in the SAME region so they talk over
-# Render's private network (no egress cost, no public exposure).
-
-databases:
-  - name: staffsync-db
-    databaseName: staffsync
-    user: staffsync
-    region: oregon
-    plan: basic-256mb # change to `free` if your account still has free Postgres access
+# The region is `ohio` (AWS us-east-2) to sit alongside the Neon project.
+# Change it if your database lives somewhere else.
 
 services:
   - type: web
     name: staffsync-api
     runtime: node
-    region: oregon
+    region: ohio
     branch: main
     autoDeploy: true
     plan: free # free instances spin down after ~15 min idle (cold starts)
@@ -27,14 +21,12 @@ services:
     envVars:
       - key: NODE_ENV
         value: production
-      # Injected automatically from the database defined above (internal URL).
+      # External Postgres (Neon). Paste the full connection string, including
+      # the ?sslmode=require suffix, when the import asks for it.
       - key: DATABASE_URL
-        fromDatabase:
-          name: staffsync-db
-          property: connectionString
-      # Paste the same JWT_SECRET your existing deployment used so current
-      # login tokens stay valid.
-      # A new random value is fine too, but it logs every user out.
+        sync: false
+      # Generate a fresh value - the database is new, so there are no existing
+      # sessions to preserve and no reason to reuse the old secret.
       - key: JWT_SECRET
         sync: false
       - key: JWT_EXPIRES_IN
@@ -43,8 +35,13 @@ services:
       # Leave blank to fall back to "*" (any origin).
       - key: CORS_ORIGIN
         sync: false
-      # The BREVO_* names are historical - these two only configure SMTP
-      # (this project sends through Gmail today). Copy them from .env.
+      # Email. BREVO_API_KEY is the one that matters on Render: outbound SMTP
+      # ports (25/465/587) are blocked here, so the mailer sends over Brevo's
+      # HTTPS API on 443 instead. Brevo -> SMTP & API -> API Keys (xkeysib-...).
+      - key: BREVO_API_KEY
+        sync: false
+      # The SMTP values are a local-development fallback only; they cannot
+      # connect from Render. Copy them from .env if you want them.
       - key: BREVO_SMTP_HOST
         sync: false
       - key: BREVO_SMTP_PORT

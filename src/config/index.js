@@ -33,10 +33,15 @@ const config = {
 
   // Brevo (email)
   brevo: {
+    // Preferred on Render: the HTTPS API (port 443). Render blocks outbound
+    // SMTP ports, so the SMTP settings below only work locally or on hosts
+    // that allow them.
+    apiKey: process.env.BREVO_API_KEY || '',
     smtpHost: process.env.BREVO_SMTP_HOST || 'smtp-relay.brevo.com',
     smtpPort: parseInt(process.env.BREVO_SMTP_PORT, 10) || 587,
     smtpUser: process.env.BREVO_SMTP_USER || '',
     smtpPass: process.env.BREVO_SMTP_PASS || '',
+    fromName: process.env.BREVO_FROM_NAME || 'StaffSync',
     fromEmail: process.env.BREVO_FROM_EMAIL || 'noreply@staffsync.com',
   },
 

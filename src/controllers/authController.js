@@ -184,13 +184,13 @@ exports.forgotPassword = async (req, res, next) => {
     // Store OTP with 5-minute expiry
     setOtp(email, otp, 5 * 60 * 1000);
 
-    // Send OTP email
-    const sent = await sendOtpEmail(email, otp);
+    // Send OTP email. In production a delivery failure throws, so the client
+    // gets a real error instead of a false success.
+    await sendOtpEmail(email, otp);
 
     res.json({
       success: true,
       message: 'Password reset code sent to your email',
-      data: { otp },
     });
   } catch (error) {
     next(error);
@@ -380,7 +380,6 @@ exports.sendOtp = async (req, res, next) => {
       success: true,
       data: {
         message: sent ? 'OTP sent to email' : 'OTP generated (dev mode — check server console)',
-        ...(config.isDev && !sent ? { devOtp: otp } : {}),
       },
     });
   } catch (error) {
