@@ -1,5 +1,11 @@
 const nodemailer = require('nodemailer');
+const dns = require('dns');
 const config = require('../config');
+
+// Gmail's SMTP host advertises IPv6 addresses, but container networks (Render
+// included) often have no IPv6 route, so the connection fails with
+// ENETUNREACH before authentication. Prefer IPv4 when resolving hostnames.
+dns.setDefaultResultOrder('ipv4first');
 
 /**
  * Create a reusable transporter using SMTP (Brevo or configured provider).
